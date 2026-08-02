@@ -161,19 +161,22 @@ export default function MachineDetailPage() {
   useEffect(() => {
     async function loadMachine() {
       try {
+        setError(null);
         setHealthLoading(true);
         setHealthError(null);
 
-        const [machineSnap, inventorySnap, healthSnap] = await Promise.all([
+        // Load core machine data independently of health. A missing/denied
+        // health doc must not take down the whole machine detail page.
+        const [machineSnap, inventorySnap] = await Promise.all([
           getDoc(doc(db, "machines", machineId)),
           getDocs(collection(db, "machines", machineId, "inventory")),
-          getDoc(doc(db, "machines", machineId, "health", "current")),
         ]);
 
         if (machineSnap.exists()) {
           setMachine(machineSnap.data() as MachineData);
         } else {
           setError(`Machine '${machineId}' was not found.`);
+          setHealthLoading(false);
           return;
         }
 
@@ -184,20 +187,31 @@ export default function MachineDetailPage() {
           }))
         );
 
-        if (healthSnap.exists()) {
-          setHealth(healthSnap.data() as MachineHealthDocument);
-        } else {
+        try {
+          const healthSnap = await getDoc(
+            doc(db, "machines", machineId, "health", "current")
+          );
+          if (healthSnap.exists()) {
+            setHealth(healthSnap.data() as MachineHealthDocument);
+          } else {
+            setHealth(null);
+          }
+        } catch (healthErr) {
+          console.error("Health document load failed:", healthErr);
           setHealth(null);
+          if (healthErr instanceof Error) {
+            setHealthError(healthErr.message);
+          } else {
+            setHealthError("Failed to load health document");
+          }
         }
       } catch (err) {
         console.error("Firestore load failed:", err);
 
         if (err instanceof Error) {
           setError(`Failed to connect to Firestore: ${err.message}`);
-          setHealthError(err.message);
         } else {
           setError("Failed to connect to Firestore: unknown error");
-          setHealthError("Unknown error");
         }
       } finally {
         setHealthLoading(false);
