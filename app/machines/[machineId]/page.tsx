@@ -25,6 +25,8 @@ type MachineData = {
   last_seen_at?: { toDate?: () => Date } | string;
   health_status?: string;
   health_issue_count?: number;
+  /** Merchant-safe denormalized snapshot written by SellMateCloud. */
+  health_current?: MachineHealthDocument;
   location?: {
     latitude?: number;
     longitude?: number;
@@ -165,15 +167,22 @@ export default function MachineDetailPage() {
         setHealthLoading(true);
         setHealthError(null);
 
-        // Load core machine data independently of health. A missing/denied
-        // health doc must not take down the whole machine detail page.
         const [machineSnap, inventorySnap] = await Promise.all([
           getDoc(doc(db, "machines", machineId)),
           getDocs(collection(db, "machines", machineId, "inventory")),
         ]);
 
         if (machineSnap.exists()) {
-          setMachine(machineSnap.data() as MachineData);
+          const data = machineSnap.data() as MachineData;
+          setMachine(data);
+          // Prefer denormalized merchant snapshot on the machine doc.
+          // Avoid reading machines/{id}/health/current — that subcollection is
+          // often blocked by Firestore rules even when machines docs are readable.
+          if (data.health_current) {
+            setHealth(data.health_current);
+          } else {
+            setHealth(null);
+          }
         } else {
           setError(`Machine '${machineId}' was not found.`);
           setHealthLoading(false);
@@ -186,25 +195,6 @@ export default function MachineDetailPage() {
             ...(slotDoc.data() as Omit<InventorySlot, "id">),
           }))
         );
-
-        try {
-          const healthSnap = await getDoc(
-            doc(db, "machines", machineId, "health", "current")
-          );
-          if (healthSnap.exists()) {
-            setHealth(healthSnap.data() as MachineHealthDocument);
-          } else {
-            setHealth(null);
-          }
-        } catch (healthErr) {
-          console.error("Health document load failed:", healthErr);
-          setHealth(null);
-          if (healthErr instanceof Error) {
-            setHealthError(healthErr.message);
-          } else {
-            setHealthError("Failed to load health document");
-          }
-        }
       } catch (err) {
         console.error("Firestore load failed:", err);
 
@@ -228,7 +218,10 @@ export default function MachineDetailPage() {
         machine?.last_seen_at ?? null
       );
     }
-    return resolveDisplayStatus(health.status, health.received_at);
+    return resolveDisplayStatus(
+      health.status,
+      health.received_at ?? machine?.last_seen_at ?? null
+    );
   }, [health, machine]);
 
   const healthIsStale = displayHealthStatus === "offline";
@@ -482,7 +475,8 @@ return (
               </div>
             ) : !health ? (
               <div className="p-8 text-center text-sm text-gray-500">
-                No health report yet. The Pi health reporter has not checked in.
+                No health report yet. Waiting for the next Pi heartbeat after
+                the cloud health endpoint is deployed.
               </div>
             ) : (
               <>
