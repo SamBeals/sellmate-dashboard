@@ -11,16 +11,29 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import {
+  healthStatusBadgeClass,
+  healthStatusLabel,
+  parseHealthTimestamp,
+  resolveDisplayStatus,
+  type HealthStatus,
+} from "@/lib/health";
 
 type MachineDocument = {
   display_name?: string;
   status?: string;
+  last_seen_at?: Timestamp | { toDate?: () => Date } | string;
+  health_status?: string;
+  health_issue_count?: number;
 };
 
 type FleetMachine = {
   id: string;
   displayName: string;
   status: string;
+  healthStatus: HealthStatus;
+  lastSeenLabel: string;
+  issueCount: number;
 };
 
 type OrderDocument = {
@@ -141,11 +154,27 @@ export default function Home() {
         const loadedMachines = machineSnapshot.docs
           .map((machineDoc) => {
             const data = machineDoc.data() as MachineDocument;
+            const healthStatus = resolveDisplayStatus(
+              data.health_status,
+              data.last_seen_at ?? null
+            );
+            const lastSeen = parseHealthTimestamp(data.last_seen_at ?? null);
 
             return {
               id: machineDoc.id,
               displayName: data.display_name?.trim() || machineDoc.id,
               status: data.status?.trim().toLowerCase() || "unknown",
+              healthStatus,
+              lastSeenLabel: lastSeen
+                ? lastSeen.toLocaleString("en-US", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })
+                : "Never",
+              issueCount:
+                typeof data.health_issue_count === "number"
+                  ? data.health_issue_count
+                  : 0,
             };
           })
           .sort((first, second) =>
@@ -512,19 +541,20 @@ export default function Home() {
                 <div className="divide-y divide-gray-200">
                   {machines.map((machine) => {
                     const hasVendFailure = failedVendMachineIds.has(machine.id);
-                    const statusLabel = hasVendFailure
-                      ? "attention"
-                      : machine.status;
-                    const statusStyle = hasVendFailure
-                      ? "bg-yellow-100 text-yellow-700"
-                      : machine.status === "active"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-gray-200 text-gray-700";
+                    // Prefer live Pi health; fall back to vend-failure attention.
+                    const healthStatus =
+                      machine.healthStatus === "unknown" && hasVendFailure
+                        ? "attention"
+                        : machine.healthStatus === "healthy" && hasVendFailure
+                          ? "attention"
+                          : machine.healthStatus;
+                    const issueCount =
+                      machine.issueCount + (hasVendFailure ? 1 : 0);
 
                     return (
                       <article
                         key={machine.id}
-                        className="grid gap-3 p-5 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+                        className="grid gap-3 p-5 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"
                       >
                         <div>
                           <Link
@@ -536,13 +566,22 @@ export default function Home() {
                           <h3 className="mt-1 font-semibold text-gray-900">
                             {machine.displayName}
                           </h3>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Last seen: {machine.lastSeenLabel}
+                          </p>
                         </div>
 
                         <span
-                          className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusStyle}`}
+                          className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${healthStatusBadgeClass(
+                            healthStatus
+                          )}`}
                         >
-                          {statusLabel}
+                          {healthStatusLabel(healthStatus)}
                         </span>
+
+                        <p className="text-xs font-medium text-gray-500 sm:min-w-16 sm:text-center">
+                          {issueCount > 0 ? `${issueCount} issue${issueCount === 1 ? "" : "s"}` : "—"}
+                        </p>
 
                         <p className="font-semibold text-gray-900 sm:min-w-24 sm:text-right">
                           {formatCurrency(

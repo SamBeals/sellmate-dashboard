@@ -2,9 +2,19 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import {
+  boolBadgeClass,
+  formatOptionalNumber,
+  formatUptime,
+  healthStatusBadgeClass,
+  healthStatusLabel,
+  parseHealthTimestamp,
+  resolveDisplayStatus,
+  type MachineHealthDocument,
+} from "@/lib/health";
 
 type MachineData = {
   display_name?: string;
@@ -12,6 +22,9 @@ type MachineData = {
   template_id?: string;
   status?: string;
   updated_at?: { toDate?: () => Date };
+  last_seen_at?: { toDate?: () => Date } | string;
+  health_status?: string;
+  health_issue_count?: number;
   location?: {
     latitude?: number;
     longitude?: number;
@@ -104,10 +117,22 @@ function formatTimestamp(value?: { toDate?: () => Date }) {
   });
 }
 
+function formatHealthTime(value?: string | { toDate?: () => Date } | null) {
+  const date = parseHealthTimestamp(value ?? null);
+  if (!date) return "Not available";
+  return date.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export default function MachineDetailPage() {
   const { machineId } = useParams<{ machineId: string }>();
   const [machine, setMachine] = useState<MachineData | null>(null);
   const [inventory, setInventory] = useState<InventorySlot[]>([]);
+  const [health, setHealth] = useState<MachineHealthDocument | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [healthError, setHealthError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "sales">("overview");
 
@@ -136,13 +161,17 @@ export default function MachineDetailPage() {
   useEffect(() => {
     async function loadMachine() {
       try {
-        const [machineSnap, inventorySnap] = await Promise.all([
+        setHealthLoading(true);
+        setHealthError(null);
+
+        const [machineSnap, inventorySnap, healthSnap] = await Promise.all([
           getDoc(doc(db, "machines", machineId)),
           getDocs(collection(db, "machines", machineId, "inventory")),
+          getDoc(doc(db, "machines", machineId, "health", "current")),
         ]);
 
         if (machineSnap.exists()) {
-          setMachine(machineSnap.data());
+          setMachine(machineSnap.data() as MachineData);
         } else {
           setError(`Machine '${machineId}' was not found.`);
           return;
@@ -154,19 +183,44 @@ export default function MachineDetailPage() {
             ...(slotDoc.data() as Omit<InventorySlot, "id">),
           }))
         );
-      }  catch (err) {
+
+        if (healthSnap.exists()) {
+          setHealth(healthSnap.data() as MachineHealthDocument);
+        } else {
+          setHealth(null);
+        }
+      } catch (err) {
         console.error("Firestore load failed:", err);
-      
+
         if (err instanceof Error) {
           setError(`Failed to connect to Firestore: ${err.message}`);
+          setHealthError(err.message);
         } else {
           setError("Failed to connect to Firestore: unknown error");
+          setHealthError("Unknown error");
         }
+      } finally {
+        setHealthLoading(false);
       }
     }
 
     loadMachine();
   }, [machineId]);
+
+  const displayHealthStatus = useMemo(() => {
+    if (!health) {
+      return resolveDisplayStatus(
+        machine?.health_status,
+        machine?.last_seen_at ?? null
+      );
+    }
+    return resolveDisplayStatus(health.status, health.received_at);
+  }, [health, machine]);
+
+  const healthIsStale = displayHealthStatus === "offline";
+  const lastSeenLabel = formatHealthTime(
+    health?.received_at ?? machine?.last_seen_at ?? null
+  );
 
   const salesOnly = mockSalesEvents.filter((event) => event.type === "sale");
   const totalRevenueCents = salesOnly.reduce(
@@ -381,6 +435,179 @@ return (
                 </p>
               </div>
             </div>
+          </section>
+
+          <section className="mt-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex flex-col gap-4 border-b border-gray-200 p-6 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+                  Remote health
+                </p>
+                <h2 className="mt-1 text-2xl font-semibold">Pi diagnostics</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Latest heartbeat from the Raspberry Pi. Online status is based
+                  on when the cloud last received a report.
+                </p>
+              </div>
+              <span
+                className={`w-fit rounded-full px-3 py-1 text-sm font-semibold ${healthStatusBadgeClass(
+                  displayHealthStatus
+                )}`}
+              >
+                {healthStatusLabel(displayHealthStatus)}
+              </span>
+            </div>
+
+            {healthLoading ? (
+              <div className="p-8 text-center text-sm text-gray-500">
+                Loading health report…
+              </div>
+            ) : healthError ? (
+              <div className="p-8 text-center text-sm text-red-600">
+                Failed to load health data: {healthError}
+              </div>
+            ) : !health ? (
+              <div className="p-8 text-center text-sm text-gray-500">
+                No health report yet. The Pi health reporter has not checked in.
+              </div>
+            ) : (
+              <>
+                {healthIsStale ? (
+                  <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-sm font-medium text-red-700">
+                    This report is stale. Showing last known values — do not
+                    treat them as current health.
+                  </div>
+                ) : null}
+
+                <div
+                  className={`grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4 ${
+                    healthIsStale ? "opacity-60" : ""
+                  }`}
+                >
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-sm font-medium text-gray-500">Last seen</p>
+                    <p className="mt-2 text-sm font-semibold text-gray-900">
+                      {lastSeenLabel}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-sm font-medium text-gray-500">Hostname</p>
+                    <p className="mt-2 text-sm font-semibold text-gray-900">
+                      {health.hostname ?? "Not available"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-sm font-medium text-gray-500">App version</p>
+                    <p className="mt-2 font-mono text-sm font-semibold text-gray-900">
+                      {health.app_version ?? "Not available"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-sm font-medium text-gray-500">Pi uptime</p>
+                    <p className="mt-2 text-sm font-semibold text-gray-900">
+                      {formatUptime(health.system?.uptime_seconds)}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  className={`grid gap-4 border-t border-gray-200 p-6 sm:grid-cols-2 lg:grid-cols-4 ${
+                    healthIsStale ? "opacity-60" : ""
+                  }`}
+                >
+                  <div className="rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm font-medium text-gray-500">CPU temp</p>
+                    <p className="mt-2 text-xl font-bold text-gray-900">
+                      {formatOptionalNumber(
+                        health.system?.cpu_temperature_c,
+                        "°C"
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm font-medium text-gray-500">CPU usage</p>
+                    <p className="mt-2 text-xl font-bold text-gray-900">
+                      {formatOptionalNumber(health.system?.cpu_percent, "%")}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm font-medium text-gray-500">Memory</p>
+                    <p className="mt-2 text-xl font-bold text-gray-900">
+                      {formatOptionalNumber(health.system?.memory_percent, "%")}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm font-medium text-gray-500">Disk</p>
+                    <p className="mt-2 text-xl font-bold text-gray-900">
+                      {formatOptionalNumber(health.system?.disk_percent, "%")}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  className={`grid gap-4 border-t border-gray-200 p-6 sm:grid-cols-2 lg:grid-cols-4 ${
+                    healthIsStale ? "opacity-60" : ""
+                  }`}
+                >
+                  {(
+                    [
+                      ["Vend API", health.services?.vend_api_running],
+                      ["Poller", health.services?.poller_running],
+                      ["ToF sensor", health.hardware?.tof_connected],
+                      [
+                        "Motor controller",
+                        health.hardware?.motor_controller_connected,
+                      ],
+                    ] as const
+                  ).map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-lg border border-gray-200 p-4"
+                    >
+                      <p className="text-sm font-medium text-gray-500">{label}</p>
+                      <span
+                        className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${boolBadgeClass(
+                          value
+                        )}`}
+                      >
+                        {value === true
+                          ? "OK"
+                          : value === false
+                            ? "Issue"
+                            : "Unknown"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  className={`border-t border-gray-200 p-6 ${
+                    healthIsStale ? "opacity-60" : ""
+                  }`}
+                >
+                  <p className="text-sm font-medium text-gray-500">
+                    Detected I²C addresses
+                  </p>
+                  <p className="mt-2 font-mono text-sm font-semibold text-gray-900">
+                    {(health.hardware?.i2c_devices ?? []).length > 0
+                      ? (health.hardware?.i2c_devices ?? []).join(", ")
+                      : "None detected"}
+                  </p>
+                  {(health.errors ?? []).length > 0 ? (
+                    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                      <p className="text-sm font-semibold text-amber-900">
+                        Reporter errors
+                      </p>
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">
+                        {(health.errors ?? []).map((err) => (
+                          <li key={err}>{err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            )}
           </section>
 
           <section className="mt-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
