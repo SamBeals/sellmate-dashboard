@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "machine_id": "machine_test",
+  "captured_at": "2026-08-12T00:00:00Z",
+  "motor_controller_present": true,
+  "candidate_count": 6,
+  "simulation": true,
+  "notes": ["Simulated motor discovery fixture for FEATURE-013"],
+  "sensing": {
+    "tof_available": true,
+    "tof_sensor": "VL53L1X",
+    "beam_available": false,
+    "preferred_verification": "tof"
+  },
+  "motors": [
+    {
+      "discovery_id": "mot_sim_01",
+      "bank": "A",
+      "mask": 1,
+      "addressable": true,
+      "probe_ok": true,
+      "legacy_slot_hint": "S01",
+      "label_hint": "S01"
+    },
+    {
+      "discovery_id": "mot_sim_02",
+      "bank": "A",
+      "mask": 2,
+      "addressable": true,
+      "probe_ok": true,
+      "legacy_slot_hint": "S02",
+      "label_hint": "S02"
+    },
+    {
+      "discovery_id": "mot_sim_03",
+      "bank": "A",
+      "mask": 4,
+      "addressable": true,
+      "probe_ok": true,
+      "legacy_slot_hint": "S03",
+      "label_hint": "S03"
+    },
+    {
+      "discovery_id": "mot_sim_04",
+      "bank": "A",
+      "mask": 8,
+      "addressable": true,
+      "probe_ok": true,
+      "legacy_slot_hint": "S04",
+      "label_hint": "S04"
+    },
+    {
+      "discovery_id": "mot_sim_05",
+      "bank": "A",
+      "mask": 16,
+      "addressable": true,
+      "probe_ok": true,
+      "legacy_slot_hint": "S05",
+      "label_hint": "S05"
+    },
+    {
+      "discovery_id": "mot_sim_06",
+      "bank": "A",
+      "mask": 32,
+      "addressable": true,
+      "probe_ok": true,
+      "legacy_slot_hint": "S06",
+      "label_hint": "S06"
+    }
+  ]
+}

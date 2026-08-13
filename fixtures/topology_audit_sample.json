@@ -1,0 +1,45 @@
+[
+  {
+    "schema_version": 1,
+    "event_id": "evt_migration_001",
+    "machine_id": "machine_test",
+    "event_type": "migration_imported",
+    "created_at": "2026-08-11T22:00:00Z",
+    "revision_id": "rev_fixture_active",
+    "actor": "migration_tool",
+    "summary": "Imported static S01–S06 layout as proposed topology",
+    "details": {
+      "legacy_slot_count": 6,
+      "hardware": { "i2c_address": "0x27", "bank": "A" }
+    }
+  },
+  {
+    "schema_version": 1,
+    "event_id": "evt_approved_001",
+    "machine_id": "machine_test",
+    "event_type": "revision_approved",
+    "created_at": "2026-08-12T00:00:00Z",
+    "revision_id": "rev_fixture_active",
+    "actor": "fixture",
+    "summary": "Topology revision approved and activated",
+    "details": {
+      "position_count": 2,
+      "bank": "A",
+      "mask": 1
+    }
+  },
+  {
+    "schema_version": 1,
+    "event_id": "evt_proposal_001",
+    "machine_id": "machine_test",
+    "event_type": "proposal_created",
+    "created_at": "2026-08-12T12:00:00Z",
+    "revision_id": "rev_fixture_proposed",
+    "actor": "tech-1",
+    "summary": "Proposed topology change awaiting technician review",
+    "details": {
+      "diagnostics": { "i2c_bus": "1" },
+      "destructive": false
+    }
+  }
+]

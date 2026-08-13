@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+} from "firebase/firestore";
+import { MachineTopologyPanel } from "@/components/machine-topology-panel";
 import { db } from "@/lib/firebase";
 import {
   boolBadgeClass,
@@ -15,6 +24,15 @@ import {
   resolveDisplayStatus,
   type MachineHealthDocument,
 } from "@/lib/health";
+import {
+  ensureVendorSafeTopology,
+  parseAuditEvent,
+  parseTopologyReview,
+  toVendorSafeAuditEvent,
+  type TopologyReviewMetadata,
+  type VendorSafeAuditEvent,
+  type VendorSafeTopology,
+} from "@/lib/topology";
 
 type MachineData = {
   display_name?: string;
@@ -27,6 +45,11 @@ type MachineData = {
   health_issue_count?: number;
   /** Merchant-safe denormalized snapshot written by SellMateCloud. */
   health_current?: MachineHealthDocument;
+  /** Vendor-safe active topology denormalized by SellMateCloud (FEATURE-013). */
+  topology_active?: VendorSafeTopology | null;
+  topology_review?: TopologyReviewMetadata | null;
+  topology_revision_id?: string | null;
+  topology_position_count?: number | null;
   location?: {
     latitude?: number;
     longitude?: number;
@@ -135,6 +158,11 @@ export default function MachineDetailPage() {
   const [health, setHealth] = useState<MachineHealthDocument | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [topology, setTopology] = useState<VendorSafeTopology | null>(null);
+  const [topologyReview, setTopologyReview] =
+    useState<TopologyReviewMetadata | null>(null);
+  const [auditEvents, setAuditEvents] = useState<VendorSafeAuditEvent[]>([]);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "sales">("overview");
 
@@ -183,6 +211,14 @@ export default function MachineDetailPage() {
           } else {
             setHealth(null);
           }
+
+          // FEATURE-013: vendor-safe active topology + review metadata.
+          setTopology(ensureVendorSafeTopology(data.topology_active ?? null));
+          setTopologyReview(
+            parseTopologyReview(
+              (data.topology_review as Record<string, unknown> | null) ?? null
+            )
+          );
         } else {
           setError(`Machine '${machineId}' was not found.`);
           setHealthLoading(false);
@@ -195,6 +231,31 @@ export default function MachineDetailPage() {
             ...(slotDoc.data() as Omit<InventorySlot, "id">),
           }))
         );
+
+        // Topology audit history — graceful if rules block the subcollection.
+        try {
+          setAuditError(null);
+          const auditSnap = await getDocs(
+            query(
+              collection(db, "machines", machineId, "topologyAudit"),
+              orderBy("created_at", "desc"),
+              limit(25)
+            )
+          );
+          setAuditEvents(
+            auditSnap.docs.map((eventDoc) =>
+              toVendorSafeAuditEvent(
+                parseAuditEvent(eventDoc.data() as Record<string, unknown>)
+              )
+            )
+          );
+        } catch (auditErr) {
+          console.warn("Topology audit load failed:", auditErr);
+          setAuditEvents([]);
+          setAuditError(
+            auditErr instanceof Error ? auditErr.message : "permission or query error"
+          );
+        }
       } catch (err) {
         console.error("Firestore load failed:", err);
 
@@ -617,6 +678,13 @@ return (
               </>
             )}
           </section>
+
+          <MachineTopologyPanel
+            topology={topology}
+            review={topologyReview}
+            auditEvents={auditEvents}
+            auditError={auditError}
+          />
 
           <section className="mt-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 p-6">

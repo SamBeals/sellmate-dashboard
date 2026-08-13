@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "active_revision_id": "rev_fixture_active",
+  "active_approved_at": "2026-08-12T00:00:00Z",
+  "active_position_count": 2,
+  "has_pending_proposal": true,
+  "pending_revision_id": "rev_fixture_proposed",
+  "pending_is_destructive": false,
+  "commissioning_out_of_service": false,
+  "commissioning_session_status": null
+}
