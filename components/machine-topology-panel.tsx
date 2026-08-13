@@ -52,7 +52,7 @@ export function MachineTopologyPanel({
             <h2 className="text-2xl font-semibold">Approved topology</h2>
             <p className="mt-1 text-sm text-gray-500">
               Read-only shelf and lane layout from the last technician-approved
-              commissioning session.
+              commissioning session. Pending proposals stay technician-only.
             </p>
           </div>
           {topology ? (
@@ -122,8 +122,9 @@ export function MachineTopologyPanel({
 
       {!topology ? (
         <div className="p-6 text-sm text-gray-500">
-          No approved machine layout yet. After on-device commissioning is
-          completed and approved, the shelf and lane map will appear here.
+          No approved machine layout yet. After a technician completes and
+          approves commissioning in the dashboard workflow, the shelf and lane
+          map will appear here.
         </div>
       ) : (
         <div className="space-y-6 p-6">
@@ -197,7 +198,7 @@ export function MachineTopologyPanel({
           <h3 className="mt-1 text-xl font-semibold">Approvals and changes</h3>
           <p className="mt-1 text-sm text-gray-500">
             High-level commissioning history. Low-level hardware diagnostics stay
-            on the technician tools.
+            in the technician commissioning tools.
           </p>
         </div>
 

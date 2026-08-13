@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test lib/topology/topology.test.ts",
+    "test": "tsx --test lib/topology/topology.test.ts lib/commissioning/commissioning.test.ts",
     "migrate:legacy-topology": "tsx scripts/migrate_legacy_topology.ts"
   },
   "dependencies": {

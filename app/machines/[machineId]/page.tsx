@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   collection,
   doc,
@@ -13,6 +13,12 @@ import {
   query,
 } from "firebase/firestore";
 import { MachineTopologyPanel } from "@/components/machine-topology-panel";
+import {
+  canCommission,
+  canViewDiagnostics,
+  loadCredentials,
+  subscribeCredentials,
+} from "@/lib/commissioning";
 import { db } from "@/lib/firebase";
 import {
   boolBadgeClass,
@@ -165,6 +171,11 @@ export default function MachineDetailPage() {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "sales">("overview");
+  const viewerRole = useSyncExternalStore(
+    subscribeCredentials,
+    () => loadCredentials().role,
+    () => "vendor"
+  );
 
   const totalItems = inventory.reduce(
     (sum, slot) => sum + getInventoryCount(slot),
@@ -456,15 +467,32 @@ return (
                 <p className="mt-1 font-mono text-sm text-gray-500">{machineId}</p>
               </div>
 
-              <span
-                className={`w-fit rounded-full px-3 py-1 text-sm font-semibold capitalize ${
-                  machine.status === "active"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-              >
-                {machine.status ?? "unknown"}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`w-fit rounded-full px-3 py-1 text-sm font-semibold capitalize ${
+                    machine.status === "active"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {machine.status ?? "unknown"}
+                </span>
+                {canCommission(viewerRole) ? (
+                  <Link
+                    href={`/machines/${machineId}/commissioning`}
+                    className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-gray-800"
+                  >
+                    Open commissioning
+                  </Link>
+                ) : (
+                  <Link
+                    href={`/machines/${machineId}/commissioning`}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Technician commissioning
+                  </Link>
+                )}
+              </div>
             </div>
 
             <div className="grid gap-6 p-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -654,14 +682,23 @@ return (
                     healthIsStale ? "opacity-60" : ""
                   }`}
                 >
-                  <p className="text-sm font-medium text-gray-500">
-                    Detected I²C addresses
-                  </p>
-                  <p className="mt-2 font-mono text-sm font-semibold text-gray-900">
-                    {(health.hardware?.i2c_devices ?? []).length > 0
-                      ? (health.hardware?.i2c_devices ?? []).join(", ")
-                      : "None detected"}
-                  </p>
+                  {canViewDiagnostics(viewerRole) ? (
+                    <>
+                      <p className="text-sm font-medium text-gray-500">
+                        Detected I²C addresses
+                      </p>
+                      <p className="mt-2 font-mono text-sm font-semibold text-gray-900">
+                        {(health.hardware?.i2c_devices ?? []).length > 0
+                          ? (health.hardware?.i2c_devices ?? []).join(", ")
+                          : "None detected"}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">
+                      Low-level bus diagnostics are available to technician and
+                      admin roles in the commissioning tools.
+                    </p>
+                  )}
                   {(health.errors ?? []).length > 0 ? (
                     <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
                       <p className="text-sm font-semibold text-amber-900">
