@@ -42,6 +42,8 @@ export type MachineHealthDocument = {
     i2c_devices?: string[] | null;
     tof_connected?: boolean | null;
     motor_controller_connected?: boolean | null;
+    current_monitor_connected?: boolean | null;
+    current_monitor_address?: string | null;
   };
   errors?: string[];
 };

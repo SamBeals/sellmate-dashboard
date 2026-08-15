@@ -105,9 +105,22 @@ export type DiscoveredMotor = {
   mask: number;
   addressable: boolean;
   probe_ok: boolean;
+  electrically_detected?: boolean;
+  probe_result?: string;
+  activation_latency_ms?: number | null;
+  activation_duration_ms?: number | null;
   label_hint?: string | null;
   legacy_slot_hint?: string | null;
   diagnostics?: Record<string, unknown>;
+};
+
+export type CurrentMonitorSnapshot = {
+  available: boolean;
+  enabled?: boolean;
+  address?: string | null;
+  bus?: string | null;
+  reason?: string | null;
+  manufacturer_id?: string | null;
 };
 
 export type DiscoverySnapshot = {
@@ -117,6 +130,7 @@ export type DiscoverySnapshot = {
   motor_controller_present: boolean;
   motors: DiscoveredMotor[];
   sensing: SensingSnapshot;
+  current_monitor?: CurrentMonitorSnapshot | null;
   candidate_count: number;
   simulation?: boolean;
   notes?: string[];

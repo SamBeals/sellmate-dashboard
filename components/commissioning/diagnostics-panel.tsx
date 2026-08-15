@@ -83,7 +83,13 @@ export function CommissioningDiagnosticsPanel({
                     className="px-4 py-3 font-mono text-xs text-gray-800"
                   >
                     {motor.discovery_id} · bank {motor.bank} · mask {motor.mask}
-                    {motor.probe_ok ? " · probe ok" : " · probe failed"}
+                    {motor.electrically_detected
+                      ? " · electrically detected"
+                      : " · no electrical response"}
+                    {motor.probe_result ? ` · ${motor.probe_result}` : ""}
+                    {motor.activation_duration_ms != null
+                      ? ` · ${motor.activation_duration_ms}ms`
+                      : ""}
                     {motor.legacy_slot_hint
                       ? ` · hint ${motor.legacy_slot_hint}`
                       : ""}

@@ -655,6 +655,10 @@ return (
                         "Motor controller",
                         health.hardware?.motor_controller_connected,
                       ],
+                      [
+                        "Motor current sensor",
+                        health.hardware?.current_monitor_connected,
+                      ],
                     ] as const
                   ).map(([label, value]) => (
                     <div
