@@ -19,6 +19,7 @@ import type {
   CommissioningCredentials,
   CommissioningTransport,
 } from "./credentials";
+import { assertAbsoluteHttpUrl, joinApiUrl } from "./urls";
 
 export type TopologyDiff = {
   added_position_ids?: string[];
@@ -171,6 +172,7 @@ export class CommissioningClient {
       headers.set("X-API-Key", this.credentials.localApiKey.trim());
     }
 
+    assertAbsoluteHttpUrl(url);
     const res = await fetch(url, { ...init, headers });
     const body = await readJson(res);
     if (!res.ok) {
@@ -184,13 +186,16 @@ export class CommissioningClient {
   }
 
   private cloud(path: string): string {
-    return `${this.credentials.cloudBaseUrl}/machines/${encodeURIComponent(
-      this.machineId
-    )}${path}`;
+    return joinApiUrl(
+      this.credentials.cloudBaseUrl,
+      `/machines/${encodeURIComponent(this.machineId)}${path}`
+    );
   }
 
   private local(path: string): string {
-    return `${this.credentials.localBaseUrl}${path}`;
+    return joinApiUrl(this.credentials.localBaseUrl, path, {
+      defaultPort: 8000,
+    });
   }
 
   async getCurrent(): Promise<CurrentSessionResponse> {

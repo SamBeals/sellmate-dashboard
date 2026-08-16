@@ -11,6 +11,7 @@ import {
   normalizeRole,
   type SellMateRole,
 } from "./auth";
+import { stripTrailingSlash } from "./urls";
 
 export type CommissioningTransport = "remote" | "local";
 
@@ -49,14 +50,14 @@ export function subscribeCredentials(listener: Listener): () => void {
 
 export function defaultCloudBaseUrl(): string {
   return (
-    process.env.NEXT_PUBLIC_SELLMATE_CLOUD_URL?.replace(/\/$/, "") ||
+    stripTrailingSlash(process.env.NEXT_PUBLIC_SELLMATE_CLOUD_URL || "") ||
     "http://localhost:8080"
   );
 }
 
 export function defaultLocalBaseUrl(): string {
   return (
-    process.env.NEXT_PUBLIC_SELLMATE_PI_URL?.replace(/\/$/, "") ||
+    stripTrailingSlash(process.env.NEXT_PUBLIC_SELLMATE_PI_URL || "") ||
     "http://127.0.0.1:8000"
   );
 }
@@ -87,13 +88,11 @@ function readStorage(): CommissioningCredentials {
       operatorToken: String(parsed.operatorToken ?? ""),
       localApiKey: String(parsed.localApiKey ?? ""),
       technicianPin: String(parsed.technicianPin ?? ""),
-      cloudBaseUrl: String(parsed.cloudBaseUrl || base.cloudBaseUrl).replace(
-        /\/$/,
-        ""
+      cloudBaseUrl: stripTrailingSlash(
+        String(parsed.cloudBaseUrl || base.cloudBaseUrl)
       ),
-      localBaseUrl: String(parsed.localBaseUrl || base.localBaseUrl).replace(
-        /\/$/,
-        ""
+      localBaseUrl: stripTrailingSlash(
+        String(parsed.localBaseUrl || base.localBaseUrl)
       ),
       actor: String(parsed.actor ?? ""),
     };
@@ -112,8 +111,8 @@ export function loadCredentials(): CommissioningCredentials {
 export function saveCredentials(creds: CommissioningCredentials): void {
   const normalized: CommissioningCredentials = {
     ...creds,
-    cloudBaseUrl: creds.cloudBaseUrl.replace(/\/$/, ""),
-    localBaseUrl: creds.localBaseUrl.replace(/\/$/, ""),
+    cloudBaseUrl: stripTrailingSlash(creds.cloudBaseUrl),
+    localBaseUrl: stripTrailingSlash(creds.localBaseUrl),
     role: normalizeRole(creds.role, ROLE_TECHNICIAN),
   };
   memoryCache = normalized;
