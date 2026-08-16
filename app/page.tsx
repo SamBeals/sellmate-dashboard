@@ -10,6 +10,20 @@ import {
   where,
 } from "firebase/firestore";
 
+import {
+  ANALYTICS_TIMEOUT_MS,
+  MACHINES_TIMEOUT_MS,
+  analyticsWarning,
+  endOfDay,
+  errorMessage,
+  mapFailedVendMachineIds,
+  mapMachineDocuments,
+  mapSuccessfulOrders,
+  salesQueryStartDate,
+  settled,
+  startOfDay,
+  withTimeout,
+} from "@/lib/fleet";
 import { db } from "@/lib/firebase";
 import {
   healthStatusBadgeClass,
@@ -58,9 +72,6 @@ type FleetOrder = {
 
 const chartHours = Array.from({ length: 10 }, (_, index) => index + 8);
 
-/** Live path writes COMPLETED after vend + capture; PAID covers legacy orders. */
-const SUCCESSFUL_ORDER_STATUSES = new Set(["COMPLETED", "PAID"]);
-
 type SalesChartRange = "today" | "week" | "month";
 
 type ChartBucket = {
@@ -69,32 +80,6 @@ type ChartBucket = {
   salesCents: number;
   orderCount: number;
 };
-
-function isSuccessfulOrderStatus(status: string) {
-  return SUCCESSFUL_ORDER_STATUSES.has(status);
-}
-
-function startOfDay(date: Date) {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function endOfDay(date: Date) {
-  const copy = new Date(date);
-  copy.setHours(23, 59, 59, 999);
-  return copy;
-}
-
-function salesQueryStartDate(reference = new Date()) {
-  const startOfMonth = startOfDay(
-    new Date(reference.getFullYear(), reference.getMonth(), 1)
-  );
-  const startOfWeek = startOfDay(new Date(reference));
-  startOfWeek.setDate(startOfWeek.getDate() - 6);
-
-  return startOfMonth < startOfWeek ? startOfMonth : startOfWeek;
-}
 
 function formatHour(hour: number) {
   return new Date(2026, 0, 1, hour).toLocaleTimeString("en-US", {
@@ -119,117 +104,151 @@ export default function Home() {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [analyticsNotice, setAnalyticsNotice] = useState<string | null>(null);
   const [salesChartRange, setSalesChartRange] =
     useState<SalesChartRange>("today");
 
   useEffect(() => {
-    async function loadFleetOverview() {
-      try {
-        setLoading(true);
-        setError(null);
+    let cancelled = false;
 
-        const startOfToday = startOfDay(new Date());
-        const todayTimestamp = Timestamp.fromDate(startOfToday);
-        const salesChartStartTimestamp = Timestamp.fromDate(
-          salesQueryStartDate()
+    async function loadFleetOverview() {
+      setLoading(true);
+      setError(null);
+      setAnalyticsNotice(null);
+
+      const startOfToday = startOfDay(new Date());
+      const todayTimestamp = Timestamp.fromDate(startOfToday);
+      const salesChartStartTimestamp = Timestamp.fromDate(
+        salesQueryStartDate()
+      );
+
+      // Analytics must not gate machine access / commissioning.
+      const ordersPromise = settled(
+        withTimeout(
+          getDocs(
+            query(
+              collection(db, "orders"),
+              where("created_at", ">=", salesChartStartTimestamp)
+            )
+          ),
+          ANALYTICS_TIMEOUT_MS,
+          "orders"
+        )
+      );
+      const vendJobsPromise = settled(
+        withTimeout(
+          getDocs(
+            query(
+              collection(db, "vend_jobs"),
+              where("created_at", ">=", todayTimestamp)
+            )
+          ),
+          ANALYTICS_TIMEOUT_MS,
+          "vend_jobs"
+        )
+      );
+
+      const machinesResult = await settled(
+        withTimeout(
+          getDocs(collection(db, "machines")),
+          MACHINES_TIMEOUT_MS,
+          "machines"
+        )
+      );
+
+      if (cancelled) return;
+
+      if (!machinesResult.ok) {
+        console.error("Failed to load machines:", machinesResult.error);
+        setError(
+          `Failed to load fleet data: ${errorMessage(
+            machinesResult.error,
+            "machines query failed"
+          )}`
+        );
+        setLoading(false);
+        return;
+      }
+
+      const loadedMachines = mapMachineDocuments(
+        machinesResult.value.docs.map((machineDoc) => ({
+          id: machineDoc.id,
+          data: machineDoc.data() as Record<string, unknown>,
+        }))
+      ).map((machine) => {
+        const lastSeen = parseHealthTimestamp(
+          (machine.lastSeenAt as MachineDocument["last_seen_at"]) ?? null
         );
 
-        const [machineSnapshot, orderSnapshot, vendJobSnapshot] =
-          await Promise.all([
-            getDocs(collection(db, "machines")),
-            getDocs(
-              query(
-                collection(db, "orders"),
-                where("created_at", ">=", salesChartStartTimestamp)
-              )
-            ),
-            getDocs(
-              query(
-                collection(db, "vend_jobs"),
-                where("created_at", ">=", todayTimestamp)
-              )
-            ),
-          ]);
+        return {
+          id: machine.id,
+          displayName: machine.displayName,
+          status: machine.status,
+          healthStatus: resolveDisplayStatus(
+            machine.healthStatus,
+            (machine.lastSeenAt as MachineDocument["last_seen_at"]) ?? null
+          ),
+          lastSeenLabel: lastSeen
+            ? lastSeen.toLocaleString("en-US", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })
+            : "Never",
+          issueCount: machine.issueCount,
+        };
+      });
 
-        const loadedMachines = machineSnapshot.docs
-          .map((machineDoc) => {
-            const data = machineDoc.data() as MachineDocument;
-            const healthStatus = resolveDisplayStatus(
-              data.health_status,
-              data.last_seen_at ?? null
-            );
-            const lastSeen = parseHealthTimestamp(data.last_seen_at ?? null);
+      setMachines(loadedMachines);
+      setLoading(false);
 
-            return {
-              id: machineDoc.id,
-              displayName: data.display_name?.trim() || machineDoc.id,
-              status: data.status?.trim().toLowerCase() || "unknown",
-              healthStatus,
-              lastSeenLabel: lastSeen
-                ? lastSeen.toLocaleString("en-US", {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })
-                : "Never",
-              issueCount:
-                typeof data.health_issue_count === "number"
-                  ? data.health_issue_count
-                  : 0,
-            };
-          })
-          .sort((first, second) =>
-            first.displayName.localeCompare(second.displayName)
-          );
+      const [ordersResult, vendJobsResult] = await Promise.all([
+        ordersPromise,
+        vendJobsPromise,
+      ]);
 
-        const loadedOrders = orderSnapshot.docs
-          .map((orderDoc) => {
-            const data = orderDoc.data() as OrderDocument;
+      if (cancelled) return;
 
-            if (
-              typeof data.amount_cents !== "number" ||
-              !data.created_at ||
-              !data.machine_id
-            ) {
-              return null;
-            }
-
-            return {
-              amountCents: data.amount_cents,
-              createdAt: data.created_at.toDate(),
-              machineId: data.machine_id,
-              status: data.status?.toUpperCase() || "UNKNOWN",
-            };
-          })
-          .filter((order): order is FleetOrder => order !== null)
-          .filter((order) => isSuccessfulOrderStatus(order.status));
-
-        const machinesWithFailedVends = new Set<string>();
-
-        vendJobSnapshot.docs.forEach((vendJobDoc) => {
-          const data = vendJobDoc.data() as VendJobDocument;
-
-          if (data.status?.toUpperCase() === "FAILED" && data.machine_id) {
-            machinesWithFailedVends.add(data.machine_id);
-          }
-        });
-
-        setMachines(loadedMachines);
-        setOrders(loadedOrders);
-        setFailedVendMachineIds(machinesWithFailedVends);
-      } catch (loadError) {
-        console.error("Failed to load fleet overview:", loadError);
-
-        if (loadError instanceof Error) {
-          setError(`Failed to load fleet data: ${loadError.message}`);
-        } else {
-          setError("Failed to load fleet data.");
-        }
-      } finally {
-        setLoading(false);
+      if (ordersResult.ok) {
+        setOrders(
+          mapSuccessfulOrders(
+            ordersResult.value.docs.map(
+              (orderDoc) => orderDoc.data() as OrderDocument
+            )
+          )
+        );
+      } else {
+        console.warn("Failed to load orders analytics:", ordersResult.error);
+        setOrders([]);
       }
+
+      if (vendJobsResult.ok) {
+        setFailedVendMachineIds(
+          mapFailedVendMachineIds(
+            vendJobsResult.value.docs.map(
+              (vendJobDoc) => vendJobDoc.data() as VendJobDocument
+            )
+          )
+        );
+      } else {
+        console.warn(
+          "Failed to load vend_jobs analytics:",
+          vendJobsResult.error
+        );
+        setFailedVendMachineIds(new Set());
+      }
+
+      setAnalyticsNotice(
+        analyticsWarning({
+          ordersFailed: !ordersResult.ok,
+          vendJobsFailed: !vendJobsResult.ok,
+        })
+      );
     }
 
     loadFleetOverview();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const todayOrders = useMemo(() => {
@@ -249,7 +268,6 @@ export default function Home() {
 
   const chartSales = useMemo((): ChartBucket[] => {
     const now = new Date();
-    const startOfToday = startOfDay(now);
 
     if (salesChartRange === "today") {
       return chartHours.map((hour) => {
@@ -370,6 +388,12 @@ export default function Home() {
           </div>
         ) : (
           <>
+            {analyticsNotice ? (
+              <div className="mb-6 rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
+                {analyticsNotice}
+              </div>
+            ) : null}
+
             <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                 <p className="text-sm font-medium text-gray-500">
