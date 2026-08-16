@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CommissioningApiError,
+  bindDiscoveryMotors,
   canForceActivate,
   cloneShelves,
   createCommissioningClient,
@@ -94,7 +95,6 @@ export function CommissioningWorkflow({
         if (proposedRes.diff) setDiff(proposedRes.diff);
         if (activeRes.topology) setActive(activeRes.topology);
       }
-      setError(null);
     } catch (err) {
       setError(
         err instanceof CommissioningApiError
@@ -222,7 +222,12 @@ export function CommissioningWorkflow({
                 const result = await client.discover();
                 if (result.discovery) setDiscovery(result.discovery);
                 if (result.suggested_shelves?.length) {
-                  setEditableShelves(cloneShelves(result.suggested_shelves));
+                  setEditableShelves(
+                    bindDiscoveryMotors(
+                      cloneShelves(result.suggested_shelves),
+                      result.discovery?.motors ?? []
+                    )
+                  );
                 }
                 setMessage(
                   result.discovery

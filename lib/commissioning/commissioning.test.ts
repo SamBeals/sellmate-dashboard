@@ -15,6 +15,7 @@ import {
   renumberColumns,
   shelvesForPropose,
   stripTrailingSlash,
+  bindDiscoveryMotors,
 } from "./index";
 import type { TopologyShelf } from "../topology";
 import type { CommissioningCredentials } from "./credentials";
@@ -124,6 +125,61 @@ describe("FEATURE-013 layout reorder", () => {
     ]);
     assert.equal(next[0].row_index, 0);
     assert.equal(next[0].positions[0].column_index, 0);
+  });
+
+  it("keeps discovery_id on propose so Pi can bind live motors", () => {
+    const suggested = cloneShelves([
+      {
+        shelf_id: "shelf_1",
+        row_index: 0,
+        label: "Shelf 1",
+        positions: [
+          {
+            discovery_id: "disc_a1",
+            column_index: 0,
+            label: "A1",
+            legacy_slot_id: "S01",
+          },
+          {
+            discovery_id: "disc_a2",
+            column_index: 1,
+            label: "A2",
+            legacy_slot_id: "S02",
+          },
+        ],
+      },
+    ]);
+    const bound = bindDiscoveryMotors(suggested, [
+      {
+        discovery_id: "disc_a1",
+        bank: "A",
+        mask: 1,
+        addressable: true,
+        probe_ok: true,
+        electrically_detected: true,
+        label_hint: "A1",
+        legacy_slot_hint: "S01",
+      },
+      {
+        discovery_id: "disc_a2",
+        bank: "A",
+        mask: 2,
+        addressable: true,
+        probe_ok: true,
+        electrically_detected: true,
+        label_hint: "A2",
+        legacy_slot_hint: "S02",
+      },
+    ]);
+    const payload = shelvesForPropose(bound);
+    assert.equal(payload[0].positions[0].discovery_id, "disc_a1");
+    assert.equal(payload[0].positions[1].discovery_id, "disc_a2");
+    assert.equal(payload[0].positions[0].bank, "A");
+    assert.equal(payload[0].positions[0].mask, 1);
+    assert.equal(
+      payload[0].positions.some((position) => !position.discovery_id),
+      false
+    );
   });
 });
 

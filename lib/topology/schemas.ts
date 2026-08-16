@@ -75,6 +75,7 @@ export type TopologyPosition = {
   column_index: number;
   label: string;
   legacy_slot_id?: string | null;
+  discovery_id?: string | null;
   /** Stripped in vendor-safe views. */
   hardware?: HardwareRef | null;
   capabilities?: string[];
