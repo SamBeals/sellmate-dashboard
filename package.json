@@ -8,6 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test lib/topology/topology.test.ts lib/commissioning/commissioning.test.ts lib/fleet.test.ts",
+    "test:rules:clients": "python3 firebase/tests/verify_unused_client_reads.py",
+    "test:rules:setup": "bash firebase/scripts/setup-emulator-jdk.sh",
+    "test:rules": "bash firebase/scripts/test-rules.sh",
     "migrate:legacy-topology": "tsx scripts/migrate_legacy_topology.ts"
   },
   "dependencies": {
@@ -17,6 +20,7 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

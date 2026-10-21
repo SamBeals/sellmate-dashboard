@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // R0a — PROPOSAL ONLY. Not deployed.
+    // Removes client reads of four paths that no current SellMate client reads:
+    // checkout_sessions, stripe_event_receipts, machines/{id}/commands,
+    // machines/{id}/activity.
+    // Leaves the public reads the dashboard and the Android kiosk use today.
+    // The Admin SDK (Cloud Run) does not consult these rules, so backend writes
+    // of checkout sessions and Stripe receipts keep working.
+    // Deploy only after a separate approval. See firebase/README.md.
+
+    match /machines/{machineId} {
+      allow read: if true;
+
+      match /inventory/{slotId} {
+        allow read: if true;
+      }
+      match /planogramSlots/{slotId} {
+        allow read: if true;
+      }
+    }
+
+    match /orders/{orderId} {
+      allow read: if true;
+    }
+    match /vend_jobs/{vendJobId} {
+      allow read: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

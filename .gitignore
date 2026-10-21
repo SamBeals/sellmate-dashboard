@@ -40,5 +40,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# production inspection dumps — never commit
+/firebase/_*.json
+/firebase/.tools/
+firestore-debug.log
+firebase-debug.log
+
 # JetBrains
 .idea/

@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // R0 — behavioral copy of the live sellmate-bdd22 rules recorded in
+    // docs/multi-tenant/00-audit-and-proposal.md §1.2 on 2026-10-18.
+    // Public reads are intentional in this file: it documents production, it does
+    // not improve it. Do not deploy. firebase/README.md explains how to run tests.
+
+    match /machines/{machineId} {
+      allow read: if true;
+
+      match /inventory/{slotId} {
+        allow read: if true;
+      }
+      match /planogramSlots/{slotId} {
+        allow read: if true;
+      }
+      match /commands/{commandId} {
+        allow read: if true;
+      }
+      match /activity/{activityId} {
+        allow read: if true;
+      }
+    }
+
+    match /orders/{orderId} {
+      allow read: if true;
+    }
+    match /vend_jobs/{vendJobId} {
+      allow read: if true;
+    }
+    match /stripe_event_receipts/{eventId} {
+      allow read: if true;
+    }
+    match /checkout_sessions/{sessionId} {
+      allow read: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

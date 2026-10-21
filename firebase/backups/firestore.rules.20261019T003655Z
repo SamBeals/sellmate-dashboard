@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================
+    // Machines
+    // ============================
+    match /machines/{machineId} {
+      allow read: if true;
+
+      match /inventory/{slotId} {
+        allow read: if true;
+      }
+
+      match /planogramSlots/{slotId} {
+        allow read: if true;
+      }
+
+      match /commands/{commandId} {
+        allow read: if true;
+      }
+
+      match /activity/{activityId} {
+        allow read: if true;
+      }
+    }
+
+    // ============================
+    // Dashboard collections
+    // ============================
+    match /orders/{orderId} {
+      allow read: if true;
+    }
+
+    match /vend_jobs/{vendJobId} {
+      allow read: if true;
+    }
+
+    // Stripe receipts (optional)
+    match /stripe_event_receipts/{eventId} {
+      allow read: if true;
+    }
+
+    // Checkout sessions (optional)
+    match /checkout_sessions/{sessionId} {
+      allow read: if true;
+    }
+
+    // Everything else stays locked
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
